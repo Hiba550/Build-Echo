@@ -1,0 +1,20 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "buildecho:core",
+      "materials": {
+        "default": "entity_emissive_alpha"
+      },
+      "textures": {
+        "default": "textures/entity/buildecho_core"
+      },
+      "geometry": {
+        "default": "geometry.buildecho.core"
+      },
+      "render_controllers": [
+        "controller.render.buildecho.core"
+      ]
+    }
+  }
+}

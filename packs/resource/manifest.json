@@ -1,0 +1,21 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Build Echo — Resources",
+    "description": "Shape-aware, translucent echo silhouettes.",
+    "uuid": "5cc98df2-b116-471b-8261-9212897d86d5",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 30]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "a1d08e88-bf5c-4091-912b-6a4ad5a43a38",
+      "version": [1, 0, 0]
+    }
+  ],
+  "metadata": {
+    "authors": ["quillphen"],
+    "license": "MIT"
+  }
+}

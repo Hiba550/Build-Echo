@@ -1,0 +1,136 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+    "controller.render.buildecho.echo": {
+      "arrays": {
+        "geometries": {
+          "Array.geometries": [
+            "geometry.fallback",
+            "geometry.cube",
+            "geometry.slab_bottom",
+            "geometry.slab_top",
+            "geometry.stair",
+            "geometry.stair_top",
+            "geometry.stair_inner_left",
+            "geometry.stair_inner_right",
+            "geometry.stair_outer_left",
+            "geometry.stair_outer_right",
+            "geometry.stair_inner_left_top",
+            "geometry.stair_inner_right_top",
+            "geometry.stair_outer_left_top",
+            "geometry.stair_outer_right_top",
+            "geometry.door",
+            "geometry.trapdoor_bottom",
+            "geometry.trapdoor_top",
+            "geometry.trapdoor_open",
+            "geometry.fence",
+            "geometry.wall",
+            "geometry.pane",
+            "geometry.torch_floor",
+            "geometry.torch_wall",
+            "geometry.lantern",
+            "geometry.lantern_hanging",
+            "geometry.ladder",
+            "geometry.button_floor",
+            "geometry.button_wall",
+            "geometry.button_ceiling",
+            "geometry.lever_floor",
+            "geometry.lever_wall",
+            "geometry.lever_ceiling",
+            "geometry.pressure_plate",
+            "geometry.sign",
+            "geometry.wall_sign",
+            "geometry.hanging_sign",
+            "geometry.rail_flat",
+            "geometry.rail_slope",
+            "geometry.rail_curve",
+            "geometry.redstone",
+            "geometry.carpet",
+            "geometry.chain",
+            "geometry.rod",
+            "geometry.chain_x",
+            "geometry.chain_z",
+            "geometry.rod_x",
+            "geometry.rod_z",
+            "geometry.fence_gate_closed",
+            "geometry.fence_gate_open",
+            "geometry.snow_1",
+            "geometry.snow_2",
+            "geometry.snow_3",
+            "geometry.snow_4",
+            "geometry.snow_5",
+            "geometry.snow_6",
+            "geometry.snow_7",
+            "geometry.snow_8",
+            "geometry.campfire",
+            "geometry.bell_floor",
+            "geometry.bell_wall",
+            "geometry.bell_ceiling",
+            "geometry.scaffold",
+            "geometry.anvil",
+            "geometry.grindstone_floor",
+            "geometry.grindstone_wall",
+            "geometry.grindstone_ceiling",
+            "geometry.stonecutter",
+            "geometry.cactus",
+            "geometry.cluster_floor",
+            "geometry.cluster_wall",
+            "geometry.cluster_ceiling",
+            "geometry.dripstone_floor",
+            "geometry.dripstone_ceiling",
+            "geometry.plant",
+            "geometry.repeater",
+            "geometry.comparator",
+            "geometry.sensor",
+            "geometry.cake_full",
+            "geometry.cake_bitten"
+          ]
+        },
+        "textures": {
+          "Array.textures": [
+            "Texture.normal",
+            "Texture.conflict"
+          ]
+        }
+      },
+      "geometry": "Array.geometries[q.property('buildecho:shape_id')]",
+      "materials": [
+        {
+          "*": "Material.default"
+        }
+      ],
+      "textures": [
+        "Array.textures[q.property('buildecho:conflict') ? 1 : 0]"
+      ],
+      "part_visibility": [
+        {
+          "north": "q.property('buildecho:north') && !q.property('buildecho:north_tall')"
+        },
+        {
+          "east": "q.property('buildecho:east') && !q.property('buildecho:east_tall')"
+        },
+        {
+          "south": "q.property('buildecho:south') && !q.property('buildecho:south_tall')"
+        },
+        {
+          "west": "q.property('buildecho:west') && !q.property('buildecho:west_tall')"
+        },
+        {
+          "north_tall": "q.property('buildecho:north_tall')"
+        },
+        {
+          "east_tall": "q.property('buildecho:east_tall')"
+        },
+        {
+          "south_tall": "q.property('buildecho:south_tall')"
+        },
+        {
+          "west_tall": "q.property('buildecho:west_tall')"
+        },
+        {
+          "post": "q.property('buildecho:post')"
+        }
+      ]
+    }
+  }
+}
