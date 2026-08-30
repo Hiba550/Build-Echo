@@ -1,4 +1,4 @@
 entity.buildecho:echo.name=Build Echo
-entity.buildecho:core.name=Echo Core
+entity.buildecho:core.name=Memory Reliquary
 action.interact.buildecho.repair=Restore
 action.interact.buildecho.summary=Inspect memory

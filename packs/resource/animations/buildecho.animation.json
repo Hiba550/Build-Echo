@@ -1,0 +1,18 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.buildecho.core.idle": {
+      "loop": true,
+      "animation_length": 18,
+      "bones": {
+        "root": {
+          "rotation": {
+            "0.0": [0, 0, 0],
+            "18.0": [0, 360, 0]
+          },
+          "position": [0, "math.sin(query.anim_time * 20) * 0.3", 0]
+        }
+      }
+    }
+  }
+}

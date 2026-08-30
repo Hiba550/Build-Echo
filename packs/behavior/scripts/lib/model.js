@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const VISUAL_SHAPES = Object.freeze([
   "fallback",
@@ -88,16 +88,34 @@ export function visualShapeId(shape) {
   return VISUAL_SHAPE_IDS.get(shape) ?? 0;
 }
 
+export function connectionMaskValue(connections = {}) {
+  return (
+    (connections.north ? 1 : 0) |
+    (connections.east ? 2 : 0) |
+    (connections.south ? 4 : 0) |
+    (connections.west ? 8 : 0) |
+    (connections.northTall ? 16 : 0) |
+    (connections.eastTall ? 32 : 0) |
+    (connections.southTall ? 64 : 0) |
+    (connections.westTall ? 128 : 0) |
+    (connections.post !== false ? 256 : 0)
+  );
+}
+
 export const LIMITS = Object.freeze({
   incidentBlocks: 80,
   incidents: 64,
   visiblePerDimension: 80,
-  renderRadius: 32,
+  visibleCoresPerDimension: 8,
+  pendingExplosions: 16,
+  renderRadius: 28,
   coreRadius: 40,
   targetDistance: 6,
   batchPerTick: 4,
   propertyChars: 30000,
-  memoryShardPositions: 64
+  memoryShardPositions: 64,
+  memoryShards: 128,
+  memoryCacheShards: 24
 });
 
 const AIR_IDS = new Set([
@@ -453,7 +471,7 @@ export function snapshotPermutation(block, memory) {
     g: memory.g,
     l: memory.l,
     c: memory.c ?? 1,
-    n: memory.n ?? 1,
+    n: memory.c === 0 ? 0 : requiredItemCount(block.typeId, permutation.getAllStates()),
     r: memory.r
   };
 }
@@ -542,6 +560,8 @@ function sameStairHalf(a, b) {
 }
 
 function stairShape(record, neighborhood) {
+  const direct = record.s?.["minecraft:corner"] ?? record.s?.corner;
+  if (["inner_left", "inner_right", "outer_left", "outer_right"].includes(direct)) return direct;
   const facing = cardinalFromStates(record.s, record.t);
   const front = stateAt(neighborhood, step(record, facing));
   if (front?.t && belongsToFamily(front.t, "stairs") && sameStairHalf(record, front)) {
@@ -818,6 +838,7 @@ export function normalizeIncident(incident) {
   const removed = sourceEntries.length - entries.length;
   return {
     ...incident,
+    v: SCHEMA_VERSION,
     entries,
     sanitized: Math.max(0, Number(incident?.sanitized ?? 0)) + removed
   };
@@ -850,8 +871,10 @@ export function distanceSquared(a, b) {
 export function deterministicRepairOrder(entry) {
   const typeId = entry.t;
   if (!isKnownNonCube(typeId) || belongsToFamily(typeId, "slab") || belongsToFamily(typeId, "stairs")) return 0;
+  if (belongsToFamily(typeId, "door") && !belongsToFamily(typeId, "trapdoor")) {
+    return entry.r === "upper" ? 2 : 1;
+  }
   if (
-    belongsToFamily(typeId, "door") ||
     belongsToFamily(typeId, "fence") ||
     belongsToFamily(typeId, "wall") ||
     belongsToFamily(typeId, "pane")

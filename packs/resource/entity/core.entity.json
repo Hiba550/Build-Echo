@@ -12,6 +12,12 @@
       "geometry": {
         "default": "geometry.buildecho.core"
       },
+      "animations": {
+        "idle": "animation.buildecho.core.idle"
+      },
+      "scripts": {
+        "animate": ["idle"]
+      },
       "render_controllers": [
         "controller.render.buildecho.core"
       ]

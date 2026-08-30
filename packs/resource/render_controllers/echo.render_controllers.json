@@ -104,31 +104,31 @@
       ],
       "part_visibility": [
         {
-          "north": "q.property('buildecho:north') && !q.property('buildecho:north_tall')"
+          "north": "(math.mod(math.floor(q.property('buildecho:connection_mask') / 1), 2) == 1) && !(math.mod(math.floor(q.property('buildecho:connection_mask') / 16), 2) == 1)"
         },
         {
-          "east": "q.property('buildecho:east') && !q.property('buildecho:east_tall')"
+          "east": "(math.mod(math.floor(q.property('buildecho:connection_mask') / 2), 2) == 1) && !(math.mod(math.floor(q.property('buildecho:connection_mask') / 32), 2) == 1)"
         },
         {
-          "south": "q.property('buildecho:south') && !q.property('buildecho:south_tall')"
+          "south": "(math.mod(math.floor(q.property('buildecho:connection_mask') / 4), 2) == 1) && !(math.mod(math.floor(q.property('buildecho:connection_mask') / 64), 2) == 1)"
         },
         {
-          "west": "q.property('buildecho:west') && !q.property('buildecho:west_tall')"
+          "west": "(math.mod(math.floor(q.property('buildecho:connection_mask') / 8), 2) == 1) && !(math.mod(math.floor(q.property('buildecho:connection_mask') / 128), 2) == 1)"
         },
         {
-          "north_tall": "q.property('buildecho:north_tall')"
+          "north_tall": "math.mod(math.floor(q.property('buildecho:connection_mask') / 16), 2) == 1"
         },
         {
-          "east_tall": "q.property('buildecho:east_tall')"
+          "east_tall": "math.mod(math.floor(q.property('buildecho:connection_mask') / 32), 2) == 1"
         },
         {
-          "south_tall": "q.property('buildecho:south_tall')"
+          "south_tall": "math.mod(math.floor(q.property('buildecho:connection_mask') / 64), 2) == 1"
         },
         {
-          "west_tall": "q.property('buildecho:west_tall')"
+          "west_tall": "math.mod(math.floor(q.property('buildecho:connection_mask') / 128), 2) == 1"
         },
         {
-          "post": "q.property('buildecho:post')"
+          "post": "math.mod(math.floor(q.property('buildecho:connection_mask') / 256), 2) == 1"
         }
       ]
     }

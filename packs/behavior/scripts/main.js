@@ -1,6 +1,7 @@
 import {
   BlockPermutation,
   EntityComponentTypes,
+  EntityTypes,
   GameMode,
   PlayerPermissionLevel,
   system,
@@ -15,6 +16,7 @@ import {
   SCHEMA_VERSION,
   belongsToFamily,
   cardinalFromStates,
+  connectionMaskValue,
   deterministicRepairOrder,
   directionVector,
   displayName,
@@ -46,12 +48,21 @@ const coreLookup = new Map();
 const entryLocks = new Set();
 const batchLocks = new Set();
 const interactionTicks = new Map();
+const errorLogState = new Map();
 let incidentSequence = 0;
 let ready = false;
+let renderDefinitionsReady = false;
 
 function logError(context, error) {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  console.error(`[Build Echo] ${context}: ${message}`);
+  const previous = errorLogState.get(context);
+  if (previous && system.currentTick - previous.tick < 100) {
+    previous.suppressed += 1;
+    return;
+  }
+  const suppressed = previous?.suppressed ? ` (${previous.suppressed} repeated errors suppressed)` : "";
+  console.error(`[Build Echo] ${context}: ${message}${suppressed}`);
+  errorLogState.set(context, { tick: system.currentTick, suppressed: 0 });
 }
 
 function safeRun(context, callback) {
@@ -111,7 +122,7 @@ function removeLinkedMemory(dimensionId, location) {
   }
 }
 
-function writePlacementMemory(dimension, block, player, group, links, charge, role) {
+function writePlacementMemory(dimension, block, owner, group, links, charge, role) {
   if (isExcludedType(block.typeId)) {
     removeLinkedMemory(dimension.id, block.location);
     return;
@@ -125,8 +136,8 @@ function writePlacementMemory(dimension, block, player, group, links, charge, ro
     t: block.typeId,
     s: block.permutation.getAllStates(),
     i: prototype.typeId,
-    o: player.id,
-    on: player.name,
+    o: owner.id,
+    on: owner.name,
     g: group,
     l: links,
     c: charge,
@@ -167,6 +178,7 @@ function recordPlacement(dimension, location, player) {
 function refreshRememberedState(dimension, location, player) {
   const memory = memoryFor(dimension.id, location);
   if (!memory) return;
+  const originalOwner = { id: memory.o ?? player.id, name: memory.on ?? player.name };
   if (memory.l && Array.isArray(memory.l)) {
     for (const key of memory.l) {
       const linkedLocation = parseLocationKey(key);
@@ -175,10 +187,10 @@ function refreshRememberedState(dimension, location, player) {
       writePlacementMemory(
         dimension,
         linkedBlock,
-        player,
+        originalOwner,
         memory.g,
         memory.l,
-        memory.r === "lower" ? 1 : (linkedBlock.permutation.getAllStates().upper_block_bit ? 0 : 1),
+        linkedBlock.permutation.getAllStates().upper_block_bit ? 0 : 1,
         linkedBlock.permutation.getAllStates().upper_block_bit ? "upper" : "lower"
       );
     }
@@ -186,7 +198,7 @@ function refreshRememberedState(dimension, location, player) {
   }
   const block = getBlock(dimension, location);
   if (!block || isAir(block.typeId)) return;
-  writePlacementMemory(dimension, block, player, memory.g, memory.l, memory.c, memory.r);
+  writePlacementMemory(dimension, block, originalOwner, memory.g, memory.l, memory.c, memory.r);
 }
 
 function collectExplosionSnapshot(event) {
@@ -233,6 +245,7 @@ function collectExplosionSnapshot(event) {
     }
   }
 
+  if (pendingExplosions.length >= LIMITS.pendingExplosions) pendingExplosions.shift();
   pendingExplosions.push({
     tick: system.currentTick,
     dimensionId: event.dimension.id,
@@ -250,7 +263,7 @@ function matchExplosion(event) {
   );
   if (index < 0) return;
   const [pending] = pendingExplosions.splice(index, 1);
-  system.runTimeout(() => finalizeExplosion(pending), 1);
+  system.runTimeout(() => safeRun("finalize explosion", () => finalizeExplosion(pending)), 1);
 }
 
 function incidentCoreLocation(entries) {
@@ -296,7 +309,8 @@ function finalizeExplosion(pending) {
   if (destroyed.length === 0) return;
 
   const capped = destroyed.slice(0, LIMITS.incidentBlocks);
-  const id = `${world.getAbsoluteTime().toString(36)}-${(incidentSequence += 1).toString(36)}`;
+  const suffix = hashString(`${pending.signature}|${pending.source}|${pending.tick}`).toString(36);
+  const id = `${world.getAbsoluteTime().toString(36)}-${(incidentSequence += 1).toString(36)}-${suffix}`;
   const incident = {
     v: SCHEMA_VERSION,
     id,
@@ -309,12 +323,13 @@ function finalizeExplosion(pending) {
     omitted: Math.max(0, destroyed.length - capped.length)
   };
   trimIncidentToStorage(incident);
-  for (const entry of destroyed) {
-    store.removeMemory(pending.dimensionId, entry);
-  }
   if (!store.saveIncident(incident)) {
     console.warn("[Build Echo] Incident was not saved because a safety cap was reached.");
     return;
+  }
+
+  for (const entry of destroyed) {
+    store.removeMemory(pending.dimensionId, entry);
   }
 
   incidents.set(id, incident);
@@ -326,7 +341,7 @@ function notifyFirstIncident(incident) {
   for (const player of dimension.getPlayers({ location: incident.core, maxDistance: LIMITS.coreRadius })) {
     if (player.getDynamicProperty("be:first") === true) continue;
     player.setDynamicProperty("be:first", true);
-    player.sendMessage("§bYour build left an echo. Bring the missing blocks to restore it.");
+    player.sendMessage("§bA shattered piece of your build still echoes here. Bring its missing materials to restore the past.");
   }
 }
 
@@ -372,17 +387,16 @@ function entryConflict(incident, entry) {
 function setEchoProperties(entity, incident, entry) {
   const connections = entry.v?.connections ?? {};
   entity.setProperty("buildecho:shape_id", visualShapeId(entry.v?.shape));
-  entity.setProperty("buildecho:north", Boolean(connections.north));
-  entity.setProperty("buildecho:east", Boolean(connections.east));
-  entity.setProperty("buildecho:south", Boolean(connections.south));
-  entity.setProperty("buildecho:west", Boolean(connections.west));
-  entity.setProperty("buildecho:north_tall", Boolean(connections.northTall));
-  entity.setProperty("buildecho:east_tall", Boolean(connections.eastTall));
-  entity.setProperty("buildecho:south_tall", Boolean(connections.southTall));
-  entity.setProperty("buildecho:west_tall", Boolean(connections.westTall));
-  entity.setProperty("buildecho:post", connections.post !== false);
+  entity.setProperty("buildecho:connection_mask", connectionMaskValue(connections));
   entity.setProperty("buildecho:conflict", entryConflict(incident, entry));
   entity.setRotation({ x: 0, y: entry.v?.yaw ?? 0 });
+}
+
+function refreshEchoConflict(entity, incident, entry) {
+  const conflict = entryConflict(incident, entry);
+  if (entity.getProperty("buildecho:conflict") !== conflict) {
+    entity.setProperty("buildecho:conflict", conflict);
+  }
 }
 
 function spawnEcho(incident, entry) {
@@ -416,19 +430,41 @@ function nearestPlayerDistanceSquared(players, location, radius) {
 
 function reconcileRenderers() {
   if (!ready) return;
-  const wantedEchoes = new Set();
+  if (incidents.size === 0 && renderedEchoes.size === 0 && renderedCores.size === 0) return;
+  if (!renderDefinitionsReady) {
+    renderDefinitionsReady = Boolean(
+      EntityTypes.get("buildecho:echo") && EntityTypes.get("buildecho:core")
+    );
+    if (!renderDefinitionsReady) return;
+  }
+  const wantedEchoes = new Map();
   const wantedCores = new Set();
   const candidates = new Map();
+  const coreCandidates = new Map();
   const playerCache = new Map();
 
   for (const incident of incidents.values()) {
+    const hasUnresolvedEntry = incident.entries.some(
+      (entry) => entry.status !== "restored" && entry.status !== "dismissed"
+    );
+    if (!hasUnresolvedEntry) {
+      if (store.removeIncident(incident.id)) {
+        incidents.delete(incident.id);
+        removeIncidentRenderers(incident.id);
+      }
+      continue;
+    }
     let players = playerCache.get(incident.dimensionId);
     if (!players) {
       players = dimensionFromId(incident.dimensionId).getPlayers();
       playerCache.set(incident.dimensionId, players);
     }
+    if (players.length === 0) continue;
     const coreDistance = nearestPlayerDistanceSquared(players, incident.core, LIMITS.coreRadius);
-    if (Number.isFinite(coreDistance)) wantedCores.add(incident.id);
+    if (Number.isFinite(coreDistance)) {
+      if (!coreCandidates.has(incident.dimensionId)) coreCandidates.set(incident.dimensionId, []);
+      coreCandidates.get(incident.dimensionId).push({ incidentId: incident.id, distance: coreDistance });
+    }
     if (!incident.visible) continue;
     for (const entry of incident.entries) {
       if (entry.status === "restored" || entry.status === "dismissed") continue;
@@ -437,7 +473,9 @@ function reconcileRenderers() {
       if (!candidates.has(incident.dimensionId)) candidates.set(incident.dimensionId, []);
       candidates.get(incident.dimensionId).push({
         renderKey: `${incident.id}|${entry.k}`,
-        distance
+        distance,
+        incident,
+        entry
       });
     }
   }
@@ -446,7 +484,14 @@ function reconcileRenderers() {
     dimensionCandidates
       .sort((a, b) => a.distance - b.distance || a.renderKey.localeCompare(b.renderKey))
       .slice(0, LIMITS.visiblePerDimension)
-      .forEach((candidate) => wantedEchoes.add(candidate.renderKey));
+      .forEach((candidate) => wantedEchoes.set(candidate.renderKey, candidate));
+  }
+
+  for (const dimensionCandidates of coreCandidates.values()) {
+    dimensionCandidates
+      .sort((a, b) => a.distance - b.distance || a.incidentId.localeCompare(b.incidentId))
+      .slice(0, LIMITS.visibleCoresPerDimension)
+      .forEach((candidate) => wantedCores.add(candidate.incidentId));
   }
 
   for (const [renderKey, entity] of renderedEchoes) {
@@ -457,11 +502,10 @@ function reconcileRenderers() {
     }
   }
 
-  for (const renderKey of wantedEchoes) {
-    const [incidentId, entryKey] = renderKey.split("|");
-    const incident = incidents.get(incidentId);
-    const entry = incident?.entries.find((value) => value.k === entryKey);
-    if (!incident || !entry) continue;
+  for (const [renderKey, candidate] of wantedEchoes) {
+    const { incident, entry } = candidate;
+    const incidentId = incident.id;
+    const entryKey = entry.k;
     let entity = renderedEchoes.get(renderKey);
     if (!entity || !isEntityValid(entity)) {
       entity = safeRun("spawn echo renderer", () => spawnEcho(incident, entry));
@@ -469,7 +513,7 @@ function reconcileRenderers() {
       renderedEchoes.set(renderKey, entity);
       echoLookup.set(entity.id, { incidentId, entryKey });
     } else {
-      safeRun("refresh echo renderer", () => setEchoProperties(entity, incident, entry));
+      safeRun("refresh echo conflict", () => refreshEchoConflict(entity, incident, entry));
     }
   }
 
@@ -538,13 +582,21 @@ function matchingAmount(player, typeId, heldOnly) {
 }
 
 function consumeItems(player, typeId, amount, heldOnly) {
-  if (player.getGameMode() === GameMode.Creative) return true;
+  const noRollback = () => {};
+  if (player.getGameMode() === GameMode.Creative) return { ok: true, rollback: noRollback };
   const container = inventoryContainer(player);
-  if (!container || matchingAmount(player, typeId, heldOnly) < amount) return false;
+  if (!container || matchingAmount(player, typeId, heldOnly) < amount) {
+    return { ok: false, rollback: noRollback };
+  }
   const slots = heldOnly
     ? [player.selectedSlotIndex]
     : Array.from({ length: container.size }, (_, slot) => slot);
   const changed = [];
+  const rollback = () => {
+    for (const previous of changed) {
+      safeRun("restore inventory after failed consumption", () => container.setItem(previous.slot, previous.stack));
+    }
+  };
   let remaining = amount;
   try {
     for (const slot of slots) {
@@ -561,16 +613,12 @@ function consumeItems(player, typeId, amount, heldOnly) {
       }
     }
   } catch {
-    for (const previous of changed) {
-      safeRun("restore inventory after failed consumption", () => container.setItem(previous.slot, previous.stack));
-    }
-    return false;
+    rollback();
+    return { ok: false, rollback: noRollback };
   }
-  if (remaining === 0) return true;
-  for (const previous of changed) {
-    safeRun("restore inventory after incomplete consumption", () => container.setItem(previous.slot, previous.stack));
-  }
-  return false;
+  if (remaining === 0) return { ok: true, rollback };
+  rollback();
+  return { ok: false, rollback: noRollback };
 }
 
 function isPositionSafeForEntityPlacement(dimension, entry) {
@@ -716,16 +764,41 @@ function repairEntry(player, incident, selected, options = {}) {
       }
     }
 
-    if (!consumeItems(player, charge.i, chargeAmount, heldOnly)) {
+    const consumption = consumeItems(player, charge.i, chargeAmount, heldOnly);
+    if (!consumption.ok) {
       rollbackPlaced(dimension, placed);
       return { ok: false, reason: "Inventory changed before the repair committed; no item was lost." };
     }
 
+    const previousStatuses = entries.map((entry) => entry.status);
     for (const entry of entries) {
       entry.status = "restored";
+    }
+    if (!store.saveIncident(incident)) {
+      entries.forEach((entry, index) => {
+        entry.status = previousStatuses[index];
+      });
+      rollbackPlaced(dimension, placed);
+      consumption.rollback();
+      return { ok: false, reason: "The repair could not be saved; the block and item were rolled back." };
+    }
+
+    for (const entry of entries) {
+      const block = getBlock(dimension, entry);
+      if (block && block.typeId === entry.t) {
+        const owner = { id: entry.o ?? player.id, name: entry.on ?? player.name };
+        safeRun("re-arm restored block", () => writePlacementMemory(
+          dimension,
+          block,
+          owner,
+          entry.g,
+          entry.l,
+          entry.c,
+          entry.r
+        ));
+      }
       removeEntryRenderer(incident.id, entry.k);
     }
-    store.saveIncident(incident);
     if (!quiet) {
       player.sendMessage(`§bRestored ${displayName(charge.i)}${chargeAmount > 1 ? ` × ${chargeAmount}` : ""}.`);
       safeRun("play repair sound", () => player.playSound("random.orb", { volume: 0.35, pitch: 1.25 }));
@@ -742,8 +815,11 @@ function completeIncidentIfResolved(incident, player) {
     (entry) => entry.status !== "restored" && entry.status !== "dismissed"
   );
   if (unresolved) return;
+  if (!store.removeIncident(incident.id)) {
+    player.sendMessage("§6The repair is complete, but its saved memory could not be cleared yet.");
+    return;
+  }
   incidents.delete(incident.id);
-  store.removeIncident(incident.id);
   removeIncidentRenderers(incident.id);
   player.sendMessage("§bBuild restored. The echo fades.");
   safeRun("play completion sound", () => player.playSound("random.levelup", { volume: 0.35, pitch: 1.55 }));
@@ -771,8 +847,13 @@ function dismissEntry(player, incident, entry) {
     player.sendMessage("§6Only this position's placing player or an operator can dismiss it.");
     return;
   }
+  const previousStatus = entry.status;
   entry.status = "dismissed";
-  store.saveIncident(incident);
+  if (!store.saveIncident(incident)) {
+    entry.status = previousStatus;
+    player.sendMessage("§6That dismissal could not be saved; nothing changed.");
+    return;
+  }
   removeEntryRenderer(incident.id, entry.k);
   player.sendMessage(`§7Dismissed ${displayName(entry.i)} at ${entry.k}.`);
   completeIncidentIfResolved(incident, player);
@@ -823,7 +904,7 @@ function openMaterials(player, incident) {
     ? ["No unresolved materials."]
     : materials.map((item) => `${item.name}: ${item.count} needed · ${item.available} carried`);
   new ActionFormData()
-    .title("BUILD ECHO · MATERIALS")
+    .title("RELIQUARY · MATERIALS")
     .body(lines.join("\n"))
     .button("Back")
     .show(player)
@@ -850,13 +931,19 @@ function startBatchRepair(player, incident) {
         const entry = entries[index];
         if (entry.g && handledGroups.has(entry.g)) continue;
         if (entry.g) handledGroups.add(entry.g);
-        const result = repairEntry(player, incident, entry, { heldOnly: false, quiet: true });
-        if (result.ok) restored += result.restored ?? 1;
+        const result = safeRun(
+          "batch repair entry",
+          () => repairEntry(player, incident, entry, { heldOnly: false, quiet: true })
+        );
+        if (result?.ok) restored += result.restored ?? 1;
         else skipped += 1;
         if ((index + 1) % LIMITS.batchPerTick === 0) yield;
         if (!incidents.has(incident.id)) break;
       }
-      player.sendMessage(`§bBatch repair: ${restored} position${restored === 1 ? "" : "s"} restored; ${skipped} skipped.`);
+      safeRun(
+        "send batch repair summary",
+        () => player.sendMessage(`§bBatch repair: ${restored} position${restored === 1 ? "" : "s"} restored; ${skipped} skipped.`)
+      );
     } finally {
       batchLocks.delete(incident.id);
     }
@@ -878,7 +965,7 @@ function accessSettings(player) {
 function openAccessibility(player, incident) {
   const settings = accessSettings(player);
   new ActionFormData()
-    .title("BUILD ECHO · ACCESSIBILITY")
+    .title("RELIQUARY · ACCESSIBILITY")
     .body("Holograms are static by design: no flashing and no precision timing.")
     .button(`Target text: ${settings.hud ? "On" : "Off"}`)
     .button(`Quiet feedback: ${settings.quiet ? "On" : "Off"}`)
@@ -908,8 +995,11 @@ function confirmDismissIncident(player, incident) {
     .show(player)
     .then((response) => {
       if (response.canceled || response.selection !== 1) return;
+      if (!store.removeIncident(incident.id)) {
+        player.sendMessage("§6That memory could not be removed; nothing changed.");
+        return;
+      }
       incidents.delete(incident.id);
-      store.removeIncident(incident.id);
       removeIncidentRenderers(incident.id);
       player.sendMessage("§7Echo memory dismissed.");
     })
@@ -921,8 +1011,9 @@ function openIncidentForm(player, incident) {
   const stats = incidentStats(incident, player);
   const omitted = incident.omitted ? `\n${incident.omitted} over-cap position(s) were not recorded.` : "";
   new ActionFormData()
-    .title("BUILD ECHO")
+    .title("BUILD ECHO · RELIQUARY")
     .body(
+      `A past structure resonates here.\n\n` +
       `${stats.unresolved} blocks remembered\n` +
       `${stats.available} material matches carried\n` +
       `${stats.conflicts} positions obstructed\n` +
@@ -939,10 +1030,15 @@ function openIncidentForm(player, incident) {
       if (response.selection === 0) startBatchRepair(player, incident);
       if (response.selection === 1) openMaterials(player, incident);
       if (response.selection === 2) {
+        const previousVisibility = incident.visible;
         incident.visible = !incident.visible;
-        store.saveIncident(incident);
+        if (!store.saveIncident(incident)) {
+          incident.visible = previousVisibility;
+          player.sendMessage("§6Visibility could not be saved; nothing changed.");
+          return;
+        }
         reconcileRenderers();
-        player.sendMessage(incident.visible ? "§bHolograms shown." : "§7Holograms hidden; the Echo Core remains.");
+        player.sendMessage(incident.visible ? "§bEchoes shown." : "§7Echoes hidden; the Memory Reliquary remains.");
       }
       if (response.selection === 3) openAccessibility(player, incident);
       if (response.selection === 4) confirmDismissIncident(player, incident);
@@ -1002,6 +1098,7 @@ function handleEntityInteraction(event) {
 }
 
 function updateTargetHud() {
+  if (!ready || incidents.size === 0) return;
   for (const player of world.getAllPlayers()) {
     const settings = accessSettings(player);
     if (!settings.hud) continue;
@@ -1009,7 +1106,7 @@ function updateTargetHud() {
       .find((value) => value.entity.typeId === "buildecho:echo" || value.entity.typeId === "buildecho:core");
     if (!hit) continue;
     if (hit.entity.typeId === "buildecho:core") {
-      player.onScreenDisplay.setActionBar("§bEcho Core §7— interact to inspect this memory");
+      player.onScreenDisplay.setActionBar("§6Memory Reliquary §7— interact to inspect this echo");
       continue;
     }
     const lookup = echoLookup.get(hit.entity.id);
@@ -1090,6 +1187,10 @@ function subscribeEvents() {
   world.afterEvents.pistonActivate.subscribe((event) => {
     safeRun("invalidate piston memories", () => invalidatePistonMemories(event));
   });
+
+  world.afterEvents.playerLeave.subscribe((event) => {
+    interactionTicks.delete(event.playerId);
+  });
 }
 
 function initialize() {
@@ -1097,7 +1198,10 @@ function initialize() {
   cleanupAllRenderers();
   for (const loadedIncident of store.loadIncidents()) {
     const incident = normalizeIncident(loadedIncident);
-    if (incident.entries.length === 0) {
+    const unresolved = incident.entries.some(
+      (entry) => entry.status !== "restored" && entry.status !== "dismissed"
+    );
+    if (incident.entries.length === 0 || !unresolved) {
       store.removeIncident(incident.id);
       continue;
     }
@@ -1112,7 +1216,7 @@ function initialize() {
 }
 
 subscribeEvents();
-system.run(() => safeRun("initialize", initialize));
+system.runTimeout(() => safeRun("initialize", initialize), 5);
 system.runInterval(() => safeRun("renderer reconciliation", reconcileRenderers), 20);
 system.runInterval(() => safeRun("target HUD", updateTargetHud), 5);
 system.runInterval(prunePendingExplosions, 20);

@@ -1,5 +1,5 @@
 {
-  "format_version": "1.21.0",
+  "format_version": "1.26.40",
   "minecraft:entity": {
     "description": {
       "identifier": "buildecho:echo",
@@ -13,49 +13,10 @@
           "default": 0,
           "client_sync": true
         },
-        "buildecho:north": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:east": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:south": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:west": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:north_tall": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:east_tall": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:south_tall": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:west_tall": {
-          "type": "bool",
-          "default": false,
-          "client_sync": true
-        },
-        "buildecho:post": {
-          "type": "bool",
-          "default": true,
+        "buildecho:connection_mask": {
+          "type": "int",
+          "range": [0, 511],
+          "default": 256,
           "client_sync": true
         },
         "buildecho:conflict": {
@@ -77,10 +38,6 @@
         "has_collision": false,
         "has_gravity": false
       },
-      "minecraft:pushable": {
-        "is_pushable": false,
-        "is_pushable_by_piston": false
-      },
       "minecraft:fire_immune": {},
       "minecraft:knockback_resistance": {
         "value": 1.0
@@ -97,7 +54,13 @@
           }
         ]
       },
-      "minecraft:persistent": {},
+      "minecraft:conditional_bandwidth_optimization": {
+        "default_values": {
+          "max_dropped_ticks": 20,
+          "max_optimized_distance": 32,
+          "use_motion_prediction_hints": false
+        }
+      },
       "minecraft:interact": {
         "interactions": [
           {

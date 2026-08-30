@@ -1,5 +1,5 @@
 {
-  "format_version": "1.21.0",
+  "format_version": "1.26.40",
   "minecraft:entity": {
     "description": {
       "identifier": "buildecho:core",
@@ -19,10 +19,6 @@
         "has_collision": false,
         "has_gravity": false
       },
-      "minecraft:pushable": {
-        "is_pushable": false,
-        "is_pushable_by_piston": false
-      },
       "minecraft:fire_immune": {},
       "minecraft:health": {
         "value": 1,
@@ -36,7 +32,13 @@
           }
         ]
       },
-      "minecraft:persistent": {},
+      "minecraft:conditional_bandwidth_optimization": {
+        "default_values": {
+          "max_dropped_ticks": 20,
+          "max_optimized_distance": 40,
+          "use_motion_prediction_hints": false
+        }
+      },
       "minecraft:interact": {
         "interactions": [
           {
